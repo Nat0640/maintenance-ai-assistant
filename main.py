@@ -87,3 +87,6 @@ async def ask_question(request: QueryRequest):
 @app.get("/")
 def read_root():
     return {"message": "Maintenance AI Assistant Backend is running!"}
+
+# .\.venv\Scripts\activate
+# uvicorn main:app --reload
