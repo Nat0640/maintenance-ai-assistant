@@ -1,0 +1,14 @@
+# Environment variables
+.env
+.venv
+
+# Python
+__pycache__/
+*.pyc
+
+# VS Code
+.vscode/
+
+# Vector DB (ถ้ามีขนาดใหญ่)
+# chroma_db_store/
+
