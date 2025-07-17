@@ -11,7 +11,7 @@ CHROMA_DB_DIR = os.path.join(RENDER_DATA_DIR, "chroma_db_store")
 
 # เลือก Embedding Model ที่รองรับภาษาไทยได้ดี
 # 'intfloat/multilingual-e5-large' เป็นโมเดลที่นิยมและมีประสิทธิภาพสูง
-MODEL_NAME = "intfloat/multilingual-e5-large"
+MODEL_NAME = "intfloat/multilingual-e5-base" #--- intfloat/multilingual-e5-small, intfloat/multilingual-e5-base, intfloat/multilingual-e5-large
 # หากต้องการโมเดลที่เล็กและเร็วขึ้น สามารถลองใช้ 'intfloat/multilingual-e5-base'
 
 print("--- เริ่มกระบวนการสร้าง Vector Database ---")

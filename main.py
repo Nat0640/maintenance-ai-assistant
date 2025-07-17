@@ -25,7 +25,7 @@ if not os.path.exists(CHROMA_DB_DIR):
 
 print("กำลังโหลด Embedding model (อาจใช้เวลาสักครู่)...")
 embedding_function = HuggingFaceEmbeddings(
-    model_name="intfloat/multilingual-e5-large",
+    model_name="intfloat/multilingual-e5-base", #--- intfloat/multilingual-e5-large // intfloat/multilingual-e5-base // intfloat/multilingual-e5-small
     model_kwargs={'device': 'cpu'},
     encode_kwargs={'normalize_embeddings': True}
 )
