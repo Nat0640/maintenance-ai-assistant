@@ -3,72 +3,96 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-# --- โค้ดกลับมาเรียบง่ายเหมือนตอนรันบนเครื่อง! ---
-CHROMA_DB_DIR = "chroma_db_store"
-
-# โหลด Environment Variables
-load_dotenv()
-
-# ที่เหลือเหมือนเดิมเกือบทั้งหมด...
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
-print("--- กำลังเริ่มต้น Backend Server บน Render ---")
+# --- 1. โหลด Environment Variables และตั้งค่าเริ่มต้น ---
+load_dotenv()
 
-# เช็คว่า Vector DB อยู่ใน disk หรือยัง (สำหรับตอนรันครั้งแรก)
-if not os.path.exists(CHROMA_DB_DIR):
-    print(f"คำเตือน: ไม่พบ Vector DB ที่ '{CHROMA_DB_DIR}'.")
-    print("โปรดรันสคริปต์ create_vector_db.py ผ่าน Render Shell ก่อนใช้งานครั้งแรก")
-    # เราจะปล่อยให้ server รันต่อไป แต่ endpoint /ask จะใช้งานไม่ได้จนกว่าจะมี DB
+# ตรวจสอบว่ามี API Key ในระบบหรือไม่
+if not os.getenv("OPENROUTER_API_KEY"):
+    raise EnvironmentError("กรุณาตั้งค่า OPENROUTER_API_KEY ในไฟล์ .env ด้วยครับ")
 
-print("กำลังโหลด Embedding model (อาจใช้เวลาสักครู่)...")
+CHROMA_DB_DIR = "chroma_db_store"
+MODEL_NAME = "intfloat/multilingual-e5-large" #-- intfloat/multilingual-e5-base // intfloat/multilingual-e5-small
+LLM_MODEL_ON_OPENROUTER = "meta-llama/llama-3-8b-instruct" # หรือ "mistralai/mixtral-8x7b-instruct"
+
+print("--- กำลังเริ่มต้น Backend Server ---")
+
+# --- 2. เตรียมส่วนประกอบของ RAG (โหลดทุกอย่างรอไว้ในหน่วยความจำ) ---
+
+# โหลด Embedding function (ใช้ CPU ก็เพียงพอสำหรับการ query)
+print("กำลังโหลด Embedding model...")
 embedding_function = HuggingFaceEmbeddings(
-    model_name="intfloat/multilingual-e5-base", #--- intfloat/multilingual-e5-large // intfloat/multilingual-e5-base // intfloat/multilingual-e5-small
+    model_name=MODEL_NAME,
     model_kwargs={'device': 'cpu'},
     encode_kwargs={'normalize_embeddings': True}
 )
 
-print(f"กำลังโหลด Vector Store จาก: {CHROMA_DB_DIR}")
+# โหลด Vector Store ที่เราสร้างไว้
+print("กำลังโหลด Vector Store จาก ChromaDB...")
 vectorstore = Chroma(
     persist_directory=CHROMA_DB_DIR,
     embedding_function=embedding_function
 )
-retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+retriever = vectorstore.as_retriever(search_kwargs={"k": 5}) # ตั้งค่าให้ดึงข้อมูลที่เกี่ยวข้องที่สุดมา 5 chunks
 
-print("กำลังเชื่อมต่อกับ LLM ผ่าน OpenRouter...")
+# สร้าง LLM client ที่ชี้ไปที่ OpenRouter
+print(f"กำลังเชื่อมต่อกับ LLM: {LLM_MODEL_ON_OPENROUTER} ผ่าน OpenRouter...")
 llm = ChatOpenAI(
-    model=os.getenv("LLM_MODEL", "meta-llama/llama-3-8b-instruct"),
+    model=LLM_MODEL_ON_OPENROUTER,
     openai_api_key=os.getenv("OPENROUTER_API_KEY"),
     openai_api_base="https://openrouter.ai/api/v1",
-    temperature=0.2,
+    temperature=0.2, # ลดความเพี้ยนของคำตอบ
     max_tokens=1024
 )
 
-PROMPT_TEMPLATE = "..." # (คัดลอก Prompt Template เดิมของคุณมาใส่ตรงนี้)
-prompt = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
+# สร้าง Prompt Template
+# นี่คือส่วนที่สำคัญที่สุดในการ "สอน" ให้ AI ตอบตามที่เราต้องการ
+PROMPT_TEMPLATE = """
+คุณคือผู้ช่วยช่างเทคนิค AI อัจฉริยะชื่อ "ช่างรู้" (Chang-Roo) หน้าที่ของคุณคือตอบคำถามเกี่ยวกับงานซ่อมบำรุง
+โดยใช้ข้อมูลจาก "เอกสารอ้างอิง" ที่ให้มาเท่านั้น ห้ามตอบนอกเหนือจากข้อมูลนี้เด็ดขาด
 
+พูดคุยด้วยภาษาไทยที่เป็นกันเอง สุภาพ และเข้าใจง่ายเหมือนคุยกับเพื่อนร่วมงาน
+เริ่มต้นคำตอบด้วยการสรุปประเด็นสำคัญก่อน แล้วค่อยอธิบายรายละเอียดตามขั้นตอน
+
+เอกสารอ้างอิง:
+{context}
+
+คำถามจากช่างเทคนิค:
+{question}
+
+คำตอบจากช่างรู้:
+"""
+prompt = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
 print("--- Backend Server พร้อมให้บริการ! ---")
 
+# --- 3. สร้าง FastAPI App และ API Endpoint ---
 app = FastAPI()
-# ... (ที่เหลือของ FastAPI endpoint /ask และ / เหมือนเดิมทุกประการ) ...
-# (คัดลอกส่วน @app.post("/ask") และ @app.get("/") จากไฟล์เดิมมาวางต่อท้าย)
 
+# Pydantic model สำหรับรับข้อมูล JSON ที่ส่งมา
 class QueryRequest(BaseModel):
     question: str
 
 @app.post("/ask")
 async def ask_question(request: QueryRequest):
+    """
+    Endpoint สำหรับรับคำถามและตอบกลับโดยใช้ RAG
+    """
     try:
         question = request.question
         if not question:
             raise HTTPException(status_code=400, detail="ไม่พบคำถาม (Question is empty)")
 
         print(f"\nได้รับคำถาม: {question}")
+
+        # 1. Retrieval: ค้นหาเอกสารที่เกี่ยวข้อง
         relevant_docs = retriever.invoke(question)
         context_text = "\n\n---\n\n".join([doc.page_content for doc in relevant_docs])
         
+        # 2. Augment & 3. Generation: สร้าง Prompt และส่งให้ LLM
         chain = prompt | llm
         response = chain.invoke({
             "context": context_text,
@@ -84,6 +108,7 @@ async def ask_question(request: QueryRequest):
         print(f"เกิดข้อผิดพลาด: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# --- 4. Endpoint สำหรับการทดสอบว่า Server ทำงานหรือไม่ ---
 @app.get("/")
 def read_root():
     return {"message": "Maintenance AI Assistant Backend is running!"}
